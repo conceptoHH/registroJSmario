@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador de Registros - Expresión Aritmética</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .registers {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .register {
+            text-align: center;
+        }
+        .register-value {
+            margin-top: 10px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .log {
+            margin-top: 20px;
+            background-color: #f9f9f9;
+            padding: 10px;
+            border: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <h1>Simulador de Registros - Evaluación de Expresión</h1>
+    <p>Ingresa una expresión aritmética con variables (por ejemplo: <code>a + b * c</code>):</p>
+    <input type="text" id="expression" placeholder="Escribe una expresión">
+    <button onclick="evaluateExpression()">Evaluar</button>
+    <div id="log" class="log"></div>
+    <div class="registers" id="registers">
+        <div class="register" id="AX">
+            <h3>AX</h3>
+            <div class="register-value">00000000</div>
+        </div>
+        <div class="register" id="BX">
+            <h3>BX</h3>
+            <div class="register-value">00000000</div>
+        </div>
+        <div class="register" id="CX">
+            <h3>CX</h3>
+            <div class="register-value">00000000</div>
+        </div>
+        <div class="register" id="DX">
+            <h3>DX</h3>
+            <div class="register-value">00000000</div>
+        </div>
+    </div>
+
+    <script>
+        // Diccionario para asignar valores iniciales a las letras
+        const letterValues = {
+            a: 5,
+            b: 3,
+            c: 7,
+            d: 2
+        };
+    
+        // Representación de los registros
+        const registers = {
+            AX: null,
+            BX: null,
+            CX: null,
+            DX: null
+        };
+    
+        // Función para actualizar el valor binario de un registro
+        function updateRegister(register, value) {
+            const registerDiv = document.getElementById(register).querySelector('.register-value');
+            registerDiv.textContent = value.toString(2).padStart(8, '0'); // Mostrar en binario de 8 bits
+        }
+    
+        // Función principal para evaluar la expresión paso a paso
+        function evaluateExpression() {
+            const input = document.getElementById('expression').value.trim();
+            const logDiv = document.getElementById('log');
+            logDiv.innerHTML = ''; // Limpia el log
+    
+            if (input.length === 0) {
+                logDiv.innerHTML = `<p style="color: red;">Error: Ingresa una expresión válida.</p>`;
+                return;
+            }
+    
+            try {
+                // Paso 1: Reemplazar letras con registros
+                let registerMapping = {};
+                let currentRegister = 'AX';
+    
+                const replacedInput = input.replace(/[a-z]/g, match => {
+                    if (!registerMapping[match]) {
+                        if (!registers[currentRegister]) {
+                            registers[currentRegister] = letterValues[match];
+                            registerMapping[match] = currentRegister;
+                            updateRegister(currentRegister, registers[currentRegister]);
+                            logDiv.innerHTML += `<p>${currentRegister} cargado con variable <code>${match}</code>: ${registers[currentRegister]} (Binario: ${registers[currentRegister].toString(2).padStart(8, '0')})</p>`;
+                            currentRegister = nextRegister(currentRegister);
+                        } else {
+                            throw new Error("No hay registros disponibles para más variables.");
+                        }
+                    }
+                    return registers[registerMapping[match]];
+                });
+    
+                logDiv.innerHTML += `<p><strong>Expresión procesada:</strong> <code>${replacedInput}</code></p>`;
+    
+                // Paso 2: Evaluar paso a paso respetando precedencia
+                const steps = parseAndEvaluate(replacedInput, logDiv);
+    
+                // Asignar el resultado final a AX
+                registers.AX = steps.result;
+                updateRegister('AX', registers.AX);
+                logDiv.innerHTML += `<p><strong>Resultado final en AX:</strong> ${registers.AX} (Binario: ${registers.AX.toString(2).padStart(8, '0')})</p>`;
+            } catch (error) {
+                logDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        }
+    
+        // Función para evaluar paso a paso una expresión
+        function parseAndEvaluate(expression, logDiv) {
+            const tokens = tokenize(expression);
+            const outputQueue = [];
+            const operatorStack = [];
+    
+            const precedence = {
+                '+': 1,
+                '-': 1,
+                '*': 2,
+                '/': 2
+            };
+    
+            // Convertir la expresión en Notación Polaca Inversa (RPN) usando Shunting-yard
+            tokens.forEach(token => {
+                if (!isNaN(token)) {
+                    outputQueue.push(parseInt(token)); // Si es un número, agregarlo a la cola de salida
+                } else if ('+-*/'.includes(token)) {
+                    while (
+                        operatorStack.length &&
+                        precedence[operatorStack[operatorStack.length - 1]] >= precedence[token]
+                    ) {
+                        outputQueue.push(operatorStack.pop());
+                    }
+                    operatorStack.push(token);
+                }
+            });
+    
+            while (operatorStack.length) {
+                outputQueue.push(operatorStack.pop());
+            }
+    
+            logDiv.innerHTML += `<p><strong>Notación Postfija:</strong> ${outputQueue.join(' ')}</p>`;
+    
+            // Evaluar la expresión en notación postfija
+            const evaluationStack = [];
+            outputQueue.forEach(token => {
+                if (!isNaN(token)) {
+                    evaluationStack.push(token); // Si es un número, empujarlo en la pila
+                } else {
+                    const b = evaluationStack.pop();
+                    const a = evaluationStack.pop();
+    
+                    let result;
+                    if (token === '+') result = a + b;
+                    if (token === '-') result = a - b;
+                    if (token === '*') result = a * b;
+                    if (token === '/') result = Math.floor(a / b);
+    
+                    logDiv.innerHTML += `<p>Evaluando: AX: ${a} ${token} ${b} = ${result}</p>`;
+                    evaluationStack.push(result);
+                }
+            });
+    
+            return { result: evaluationStack.pop() };
+        }
+    
+        // Función para dividir una expresión en tokens
+        function tokenize(expression) {
+            return expression.match(/(\d+|\+|\-|\*|\/|\(|\))/g);
+        }
+    
+        // Función para determinar el siguiente registro en orden
+        function nextRegister(current) {
+            const order = ['AX', 'BX', 'CX', 'DX'];
+            const index = (order.indexOf(current) + 1) % order.length;
+            return order[index];
+        }
+    </script>    
+</body>
+</html>
